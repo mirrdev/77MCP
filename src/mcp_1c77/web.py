@@ -12,7 +12,7 @@ from pathlib import Path
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
-from starlette.routing import Mount, Route
+from starlette.routing import Route
 from starlette.concurrency import run_in_threadpool
 
 from . import data_tools, tools
@@ -252,7 +252,9 @@ async def startup() -> None:
             print(f"Failed to auto-load configuration from {md_path}")
 
 
-# Build the unified ASGI app
+# Build both MCP transports. Streamable HTTP must be created before its
+# session manager is entered by the application lifespan.
+mcp_http_app = mcp.streamable_http_app()
 mcp_sse_app = mcp.sse_app()
 
 
@@ -260,19 +262,40 @@ mcp_sse_app = mcp.sse_app()
 async def lifespan(app):
     await startup()
     try:
-        yield
+        async with mcp.session_manager.run():
+            yield
     finally:
         await run_in_threadpool(data_tools.disconnect_database)
 
 
-app = Starlette(
-    routes=[
-        Route("/", upload_page),
-        Route("/upload", handle_upload, methods=["POST"]),
-        Route("/api/status", api_status),
-        Route("/api/database/connect", api_database_connect, methods=["POST"]),
-        Route("/api/database/disconnect", api_database_disconnect, methods=["POST"]),
-        Mount("/", app=mcp_sse_app),
-    ],
-    lifespan=lifespan,
-)
+class Router:
+    """Route Streamable HTTP and SSE MCP transports beside the web UI."""
+
+    def __init__(self, http_app, sse_app, lifespan_handler):
+        self._http = http_app
+        self._sse = sse_app
+        self._web = Starlette(
+            routes=[
+                Route("/", upload_page),
+                Route("/upload", handle_upload, methods=["POST"]),
+                Route("/api/status", api_status),
+                Route("/api/database/connect", api_database_connect, methods=["POST"]),
+                Route("/api/database/disconnect", api_database_disconnect, methods=["POST"]),
+            ],
+            lifespan=lifespan_handler,
+        )
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "lifespan":
+            await self._web(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        if path == "/mcp":
+            await self._http(scope, receive, send)
+        elif path.startswith("/sse") or path.startswith("/messages"):
+            await self._sse(scope, receive, send)
+        else:
+            await self._web(scope, receive, send)
+
+
+app = Router(mcp_http_app, mcp_sse_app, lifespan)
