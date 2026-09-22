@@ -67,12 +67,41 @@
     font-size: 0.8rem;
   }
   #config-info { display: none; }
+  .field { margin-top: 0.85rem; }
+  .field label { display: block; color: #555; font-size: 0.85rem; margin-bottom: 0.3rem; }
+  .field input {
+    width: 100%; padding: 0.55rem 0.65rem; border: 1px solid #ccc;
+    border-radius: 6px; font-size: 0.9rem;
+  }
+  .hint { color: #777; font-size: 0.82rem; line-height: 1.4; margin-top: 0.75rem; }
+  .database-state { margin-top: 0.8rem; font-size: 0.9rem; }
+  .btn.secondary { background: #777; margin-left: 0.5rem; }
 </style>
 </head>
 <body>
 
 <h1>1C 7.7 Metadata MCP Server</h1>
 <p class="subtitle">Upload 1Cv7.MD configuration file to start</p>
+
+<div class="card">
+  <h3>Живая база 1С 7.7</h3>
+  <p class="hint">Укажите абсолютный путь к локальному файлу 1Cv7.MD. Каталог базы определяется как каталог этого файла. Загрузка файла через браузер не раскрывает серверу исходный каталог и загружает только метаданные.</p>
+  <div class="field">
+    <label for="mdPath">Абсолютный путь к 1Cv7.MD</label>
+    <input id="mdPath" type="text" autocomplete="off" placeholder="C:\\Bases\\Accounting\\1Cv7.MD">
+  </div>
+  <div class="field">
+    <label for="dbUser">Пользователь 1С</label>
+    <input id="dbUser" type="text" autocomplete="username">
+  </div>
+  <div class="field">
+    <label for="dbPassword">Пароль</label>
+    <input id="dbPassword" type="password" autocomplete="current-password">
+  </div>
+  <button class="btn" id="connectBtn" onclick="connectDatabase()">Подключить</button>
+  <button class="btn secondary" id="disconnectBtn" onclick="disconnectDatabase()">Отключить</button>
+  <div class="database-state" id="databaseState">База не подключена</div>
+</div>
 
 <div class="card">
   <div class="drop-zone" id="dropZone">
@@ -193,6 +222,7 @@ function loadStatus() {
   fetch('/api/status')
     .then(r => r.json())
     .then(data => {
+      renderDatabaseStatus(data.database || {});
       if (!data.loaded) { configInfo.style.display = 'none'; return; }
       configInfo.style.display = 'block';
       document.getElementById('configName').textContent = data.name || 'Unnamed';
@@ -215,6 +245,71 @@ function loadStatus() {
           + label + '</span><span class="value">' + val + '</span></div>';
       }
     });
+}
+
+function renderDatabaseStatus(database) {
+  database = database.data || database;
+  const state = document.getElementById('databaseState');
+  const connected = Boolean(database.connected || database.loaded);
+  if (connected) {
+    const path = database.md_path || database.file_path || database.database_path || '';
+    state.textContent = 'Подключено' + (path ? ': ' + path : '');
+    state.style.color = '#27833a';
+  } else {
+    state.textContent = database.error ? 'Не подключено: ' + database.error : 'База не подключена';
+    state.style.color = database.error ? '#d9534f' : '#666';
+  }
+}
+
+async function databaseRequest(url, body) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) throw new Error(data.error || 'Ошибка запроса');
+  return data;
+}
+
+async function connectDatabase() {
+  const button = document.getElementById('connectBtn');
+  const state = document.getElementById('databaseState');
+  button.disabled = true;
+  state.textContent = 'Подключение…';
+  state.style.color = '#666';
+  const passwordInput = document.getElementById('dbPassword');
+  const password = passwordInput.value;
+  passwordInput.value = '';
+  try {
+    await databaseRequest('/api/database/connect', {
+      md_path: document.getElementById('mdPath').value,
+      user: document.getElementById('dbUser').value,
+      password: password,
+    });
+    await loadStatus();
+  } catch (error) {
+    state.textContent = 'Ошибка подключения: ' + error.message;
+    state.style.color = '#d9534f';
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function disconnectDatabase() {
+  const button = document.getElementById('disconnectBtn');
+  const state = document.getElementById('databaseState');
+  button.disabled = true;
+  try {
+    await databaseRequest('/api/database/disconnect');
+    document.getElementById('dbPassword').value = '';
+    await loadStatus();
+  } catch (error) {
+    state.textContent = 'Ошибка отключения: ' + error.message;
+    state.style.color = '#d9534f';
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function reloadConfig() {

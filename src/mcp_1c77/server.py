@@ -6,7 +6,7 @@ and forms from 1Cv7.MD configuration files.
 
 from mcp.server.fastmcp import FastMCP
 
-from . import tools
+from . import tools, data_tools
 
 mcp = FastMCP("1c77-metadata")
 
@@ -173,3 +173,74 @@ def resolve_id(object_id: str) -> str:
         object_id: Внутренний идентификатор объекта (числовая строка)
     """
     return tools.resolve_id(object_id)
+
+
+@mcp.tool()
+def get_database_info() -> dict:
+    """Состояние подключения к реальной файловой базе 7.7 и путь источника данных.
+
+    Подключение выполняется пользователем на http://localhost:8099/ по локальному
+    пути к 1Cv7.MD. Загрузка копии MD предоставляет только метаданные.
+    """
+    return data_tools.get_database_status()
+
+
+@mcp.tool()
+def read_catalog(name: str, fields: list[str] | None = None, filters: dict | None = None,
+                 limit: int = 100, offset: int = 0, as_of: str = "") -> dict:
+    """Читать элементы справочника с реквизитами и ссылками, только чтение.
+
+    name — имя из list_objects; fields — имена реквизитов. filters — равенство
+    полей скалярным значениям. as_of — дата YYYY-MM-DD периодических реквизитов.
+    limit 1..500; offset 0..100000; has_more/next_offset задают продолжение.
+    Денежные/числовые значения представлены десятичными строками без округления.
+    """
+    return data_tools.read_catalog(name, fields, filters, limit, offset, as_of)
+
+
+@mcp.tool()
+def read_documents(name: str, date_from: str, date_to: str, fields: list[str] | None = None,
+                   filters: dict | None = None, limit: int = 100, offset: int = 0) -> dict:
+    """Читать шапки документов за включительный период YYYY-MM-DD.
+
+    Возвращает ссылки для read_document_lines. fields/filters используют имена
+    реквизитов из get_object. limit 1..500, offset 0..100000. Ничего не проводит.
+    """
+    return data_tools.read_documents(name, date_from, date_to, fields, filters, limit, offset)
+
+
+@mcp.tool()
+def read_document_lines(name: str, reference: str, fields: list[str] | None = None,
+                        limit: int = 100, offset: int = 0) -> dict:
+    """Читать табличную часть документа по reference из read_documents.
+
+    name — вид документа; fields — реквизиты табличной части; limit 1..500.
+    """
+    return data_tools.read_document_lines(name, reference, fields, limit, offset)
+
+
+@mcp.tool()
+def read_accounts(limit: int = 100, offset: int = 0) -> dict:
+    """Читать реальные счета плана счетов базы 7.7. limit 1..500, offset 0..100000."""
+    return data_tools.read_accounts(limit, offset)
+
+
+@mcp.tool()
+def read_accounting_postings(date_from: str, date_to: str, account: str = "",
+                             limit: int = 100, offset: int = 0) -> dict:
+    """Читать проводки бухгалтерских операций: дебет, кредит, сумма и аналитика.
+
+    Период YYYY-MM-DD включительно; account — необязательный точный код счёта
+    дебета или кредита. limit 1..500. Суммы — десятичные строки.
+    """
+    return data_tools.read_accounting_postings(date_from, date_to, account, limit, offset)
+
+
+@mcp.tool()
+def read_accounting_totals(date_from: str, date_to: str, accounts: list[str]) -> dict:
+    """Штатные итоги 7.7 по кодам счетов: СНД/СНК, ДО/КО, СКД/СКК.
+
+    Период YYYY-MM-DD включительно, accounts — непустой список кодов счетов.
+    Используйте для сверки с 8.3 по одинаковому периоду и уровню счетов.
+    """
+    return data_tools.read_accounting_totals(date_from, date_to, accounts)

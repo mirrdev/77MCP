@@ -10,6 +10,7 @@ venv/
 .pytest_cache/
 # 1C configuration files (binary, large)
 *.MD
+!docs/*.md
 1cv7.md
 .env
 .claude/

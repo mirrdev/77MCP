@@ -2,7 +2,9 @@ services:
   mcp-1c77:
     build: .
     ports:
-      - "8099:8099"
+      - "127.0.0.1:8099:8099"
+    environment:
+      MCP_HOST: "0.0.0.0"
     volumes:
       - md-data:/data
 

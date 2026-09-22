@@ -5,15 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mcp-1c77"
 version = "0.1.0"
-description = "MCP server for 1C:Enterprise 7.7 configuration metadata"
+description = "MCP server for 1C:Enterprise 7.7 metadata and read-only data access"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp>=1.7",
+    "mcp>=1.7,<2",
     "olefile>=0.47",
     "pydantic>=2.0",
     "uvicorn>=0.30",
     "python-multipart>=0.0.9",
     "starlette>=0.37",
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

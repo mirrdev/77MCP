@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import difflib
+import os
 import re
+import uuid
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from pathlib import Path
@@ -40,7 +42,7 @@ def _resolve_within_data_dir(path: str) -> Path | None:
 
 _NOT_LOADED_MSG = (
     "Конфигурация не загружена. "
-    "Загрузите файл 1Cv7.MD через веб-интерфейс http://localhost:8080/"
+    "Загрузите файл 1Cv7.MD через веб-интерфейс http://localhost:8099/"
 )
 
 _DOCUMENT_SYSTEM_FIELDS: dict[str, str] = {
@@ -82,9 +84,91 @@ def get_loader() -> ConfigurationLoader:
 
 def init(md_path: str) -> None:
     """Initialize the loader with a configuration file. Called at server startup."""
-    global _md_path
-    _md_path = md_path
-    _loader.load(md_path)
+    candidate = ConfigurationLoader()
+    try:
+        candidate.load(md_path)
+    except Exception:
+        candidate.close()
+        raise
+    install_loader(candidate, md_path)
+
+
+def install_loader(candidate: ConfigurationLoader, md_path: str) -> None:
+    """Publish parsed metadata and invalidate the previous live data session."""
+    from .data_tools import database_lock, disconnect_database
+
+    global _loader, _md_path
+    with database_lock:
+        disconnect_database()
+        previous = _loader
+        _loader = candidate
+        _md_path = md_path
+        previous.close()
+
+
+def replace_configuration_file(staged_path: str, target_path: str) -> None:
+    """Atomically replace an uploaded MD after releasing its Windows file handle."""
+    from .data_tools import database_lock, disconnect_database
+
+    global _loader, _md_path
+    staged = Path(staged_path).resolve()
+    target = Path(target_path).resolve()
+    backup = target.with_name(f".{target.name}.{uuid.uuid4().hex}.bak")
+
+    with database_lock:
+        previous = _loader
+        previous_path = _md_path
+        previous_holds_target = bool(
+            previous.is_loaded
+            and previous_path
+            and Path(previous_path).resolve() == target
+        )
+        backup_created = False
+        staged_installed = False
+        candidate: ConfigurationLoader | None = None
+
+        if previous_holds_target:
+            previous.close()
+
+        try:
+            if target.exists():
+                os.replace(target, backup)
+                backup_created = True
+            os.replace(staged, target)
+            staged_installed = True
+
+            candidate = ConfigurationLoader()
+            candidate.load(str(target))
+
+            disconnect_database()
+            _loader = candidate
+            _md_path = str(target)
+            candidate = None
+            if not previous_holds_target:
+                previous.close()
+
+            if backup_created:
+                try:
+                    backup.unlink()
+                except OSError:
+                    pass
+        except Exception:
+            if candidate is not None:
+                candidate.close()
+            if backup_created:
+                os.replace(backup, target)
+            elif staged_installed:
+                try:
+                    target.unlink()
+                except OSError:
+                    pass
+
+            if previous_holds_target:
+                restored = ConfigurationLoader()
+                restored.load(previous_path)
+                _loader = restored
+                _md_path = previous_path
+            raise
 
 
 def reload_configuration(path: str = "") -> str:
@@ -112,9 +196,8 @@ def reload_configuration(path: str = "") -> str:
         target = _md_path
     if not target:
         return "Путь к файлу не указан."
-    _md_path = target
-    config = _loader.load(target)
-    return config.summary()
+    init(target)
+    return _loader.config.summary()
 
 
 def list_objects(object_type: str = "") -> str:
