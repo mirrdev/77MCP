@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from starlette.testclient import TestClient
 
-from mcp_1c77 import tools, web
+from mcp_1c77 import cli, tools, web
 
 
 def test_explorer_and_rest_routes(monkeypatch):
@@ -33,3 +33,16 @@ def test_export_file_is_confined_to_data_dir(monkeypatch, tmp_path):
     assert not (tmp_path.parent / "outside.json").exists()
     assert "экспортирована" in tools.export_to_json("config.json")
     assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))["name"] == "Демо"
+
+
+def test_cli_url_works_before_or_after_command(monkeypatch, capsys):
+    urls = []
+
+    def fake_client(url):
+        urls.append(url)
+        return SimpleNamespace(get_server_info=lambda: {"name": "Демо", "version": "0.4.0"})
+
+    monkeypatch.setattr(cli, "MetadataClient", fake_client)
+    assert cli.main(["--url", "http://localhost:8102", "info"]) == 0
+    assert cli.main(["info", "--url", "http://localhost:8103"]) == 0
+    assert urls == ["http://localhost:8102", "http://localhost:8103"]

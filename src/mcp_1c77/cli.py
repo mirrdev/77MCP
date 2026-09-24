@@ -198,9 +198,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     default_url = os.environ.get('MCP_SERVER_URL', 'http://localhost:8099')
 
     parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument('--url', default=default_url,
+    parent_parser.add_argument('--url', default=argparse.SUPPRESS,
                                help=f'URL сервера (по умолчанию: {default_url})')
-    parent_parser.add_argument('--json', action='store_true',
+    parent_parser.add_argument('--json', action='store_true', default=argparse.SUPPRESS,
                                help='Вывод в формате JSON')
 
     parser = argparse.ArgumentParser(
@@ -282,6 +282,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     p_info.set_defaults(func=cmd_info)
 
     args = parser.parse_args(argv)
+    if not hasattr(args, 'url'):
+        args.url = default_url
+    if not hasattr(args, 'json'):
+        args.json = False
 
     if not args.command:
         parser.print_help()
