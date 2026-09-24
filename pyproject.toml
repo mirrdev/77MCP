@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-1c77"
-version = "0.1.0"
-description = "MCP server for 1C:Enterprise 7.7 metadata and read-only data access"
+version = "0.4.0"
+description = "MCP server for 1C:Enterprise 7.7 metadata, Explorer, REST API, and read-only data"
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=1.7,<2",
@@ -16,6 +16,9 @@ dependencies = [
     "starlette>=0.37",
     "pywin32>=306; sys_platform == 'win32'",
 ]
+
+[project.scripts]
+mcp-1c77-cli = "mcp_1c77.cli:main"
 
 [project.optional-dependencies]
 dev = [

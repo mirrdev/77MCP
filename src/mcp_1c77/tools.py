@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+import json
 import os
 import re
 import uuid
@@ -183,11 +184,18 @@ def reload_configuration(path: str = "") -> str:
     Returns:
         Configuration summary text.
     """
-    global _md_path
+    try:
+        return reload_configuration_checked(path)
+    except ValueError as exc:
+        return str(exc)
+
+
+def reload_configuration_checked(path: str = "") -> str:
+    """Reload metadata, raising on invalid paths for HTTP callers."""
     if path:
         resolved = _resolve_within_data_dir(path)
         if resolved is None:
-            return (
+            raise ValueError(
                 f"Путь '{path}' находится вне разрешённого каталога "
                 f"({_data_dir}). Загружайте файл через веб-интерфейс."
             )
@@ -195,7 +203,7 @@ def reload_configuration(path: str = "") -> str:
     else:
         target = _md_path
     if not target:
-        return "Путь к файлу не указан."
+        raise ValueError("Путь к файлу не указан.")
     init(target)
     return _loader.config.summary()
 
@@ -852,6 +860,262 @@ def get_objects_batch(object_type: str, names: list[str]) -> str:
     results = [get_object(object_type, name) for name in names]
     return "\n\n---\n\n".join(results)
 
+
+def export_to_json(output_path: str = "") -> str:
+    """Export the entire configuration to JSON format.
+
+    Args:
+        output_path: Path to save the JSON file. If empty, returns JSON string.
+
+    Returns:
+        Success message or JSON string.
+    """
+    if err := _ensure_loaded():
+        return err
+
+    config_dict = _loader.config.model_dump(mode='json', by_alias=True)
+    json_str = json.dumps(config_dict, ensure_ascii=False, indent=2)
+
+    if output_path:
+        if _data_dir is None:
+            return "Сначала задайте MCP_DATA_DIR для экспорта в файл."
+        target = _resolve_within_data_dir(output_path)
+        if target is None or target.suffix.lower() != ".json":
+            return "Экспорт разрешён только в JSON-файл внутри MCP_DATA_DIR."
+        target.write_text(json_str, encoding="utf-8")
+        return f"Конфигурация экспортирована в {target}"
+
+    return json_str
+
+
+def export_object_to_json(object_type: str, name: str) -> str:
+    """Export a single metadata object to JSON format.
+
+    Args:
+        object_type: Object type (Справочник, Документ, Регистр, etc.)
+        name: Object name
+
+    Returns:
+        JSON string with object data.
+    """
+    if err := _ensure_loaded():
+        return err
+
+    config = _loader.config
+    type_lower = object_type.lower()
+
+    obj = None
+    obj_type_name = ""
+
+    if type_lower in ("справочник", "catalog"):
+        for o in config.catalogs:
+            if o.name == name:
+                obj = o
+                obj_type_name = "Catalog"
+                break
+    elif type_lower in ("документ", "document"):
+        for o in config.documents:
+            if o.name == name:
+                obj = o
+                obj_type_name = "Document"
+                break
+    elif type_lower in ("регистр", "register"):
+        for o in config.registers:
+            if o.name == name:
+                obj = o
+                obj_type_name = "Register"
+                break
+    elif type_lower in ("перечисление", "enum"):
+        for o in config.enums:
+            if o.name == name:
+                obj = o
+                obj_type_name = "Enum"
+                break
+    elif type_lower in ("константа", "constant"):
+        for o in config.constants:
+            if o.name == name:
+                obj = o
+                obj_type_name = "Constant"
+                break
+    elif type_lower in ("отчёт", "отчет", "обработка", "report"):
+        for o in config.reports:
+            if o.name == name:
+                obj = o
+                obj_type_name = "Report"
+                break
+    elif type_lower in ("видрасчёта", "видрасчета", "calcvar"):
+        for o in config.calc_vars:
+            if o.name == name:
+                obj = o
+                obj_type_name = "CalcVar"
+                break
+    elif type_lower in ("журнал", "journal"):
+        for o in config.journals:
+            if o.name == name:
+                obj = o
+                obj_type_name = "Journal"
+                break
+    elif type_lower in ("плансчетов", "план счетов", "chartofaccounts"):
+        coa = config.chart_of_accounts
+        if coa and (coa.name == name or coa.id == name):
+            obj = coa
+            obj_type_name = "ChartOfAccounts"
+
+    if obj is None:
+        return f"Объект '{object_type}.{name}' не найден."
+
+    result = {
+        "type": obj_type_name,
+        "data": obj.model_dump(mode='json', by_alias=True)
+    }
+
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+def get_object_dependencies(object_type: str, name: str) -> str:
+    """Find all objects that the given object depends on.
+
+    Args:
+        object_type: Object type (Справочник, Документ, Регистр)
+        name: Object name
+
+    Returns:
+        List of objects that this object depends on.
+    """
+    if err := _ensure_loaded():
+        return err
+
+    config = _loader.config
+    type_lower = object_type.lower()
+
+    # Find the object
+    obj = None
+    if type_lower in ("справочник", "catalog"):
+        for o in config.catalogs:
+            if o.name == name:
+                obj = o
+                break
+    elif type_lower in ("документ", "document"):
+        for o in config.documents:
+            if o.name == name:
+                obj = o
+                break
+    elif type_lower in ("регистр", "register"):
+        for o in config.registers:
+            if o.name == name:
+                obj = o
+                break
+
+    if obj is None:
+        return f"Объект '{object_type}.{name}' не найден."
+
+    # Collect all referenced type IDs
+    ref_ids = set()
+
+    def collect_refs(attributes):
+        for attr in attributes:
+            if attr.ref_type_id:
+                ref_ids.add(attr.ref_type_id)
+
+    if hasattr(obj, 'attributes'):
+        collect_refs(obj.attributes)
+    if hasattr(obj, 'head_attributes'):
+        collect_refs(obj.head_attributes)
+    if hasattr(obj, 'table_attributes'):
+        collect_refs(obj.table_attributes)
+    if hasattr(obj, 'dimensions'):
+        collect_refs(obj.dimensions)
+    if hasattr(obj, 'resources'):
+        collect_refs(obj.resources)
+
+    if not ref_ids:
+        return f"Объект '{object_type}.{name}' не имеет зависимостей от других объектов."
+
+    # Resolve references to object names
+    dependencies = []
+    for ref_id in sorted(ref_ids):
+        found = _find_object_by_id(config, ref_id)
+        if found:
+            dep_type, dep_obj = found
+            dependencies.append(f"  - {dep_type}: {dep_obj.name} [{ref_id}]")
+
+    if not dependencies:
+        return f"Объект '{object_type}.{name}' ссылается на несуществующие объекты: {', '.join(ref_ids)}"
+
+    lines = [f"Зависимости объекта '{object_type}.{name}':"]
+    lines.extend(dependencies)
+    return "\n".join(lines)
+
+
+def find_dependent_objects(object_type: str, name: str) -> str:
+    """Find all objects that depend on the given object.
+
+    Args:
+        object_type: Object type (Справочник, Документ, Регистр, Перечисление)
+        name: Object name
+
+    Returns:
+        List of objects that use the given object.
+    """
+    if err := _ensure_loaded():
+        return err
+
+    config = _loader.config
+
+    # Find object ID
+    obj_id = None
+    for cat in config.catalogs:
+        if cat.name == name and object_type.lower() in ("справочник", "catalog"):
+            obj_id = cat.id
+            break
+    for doc in config.documents:
+        if doc.name == name and object_type.lower() in ("документ", "document"):
+            obj_id = doc.id
+            break
+    for enm in config.enums:
+        if enm.name == name and object_type.lower() in ("перечисление", "enum"):
+            obj_id = enm.id
+            break
+    for reg in config.registers:
+        if reg.name == name and object_type.lower() in ("регистр", "register"):
+            obj_id = reg.id
+            break
+
+    if obj_id is None:
+        return f"Объект '{object_type}.{name}' не найден."
+
+    # Search all objects for references
+    dependents = []
+
+    def check_attrs(attributes):
+        for attr in attributes:
+            if attr.ref_type_id == obj_id:
+                return True
+        return False
+
+    for cat in config.catalogs:
+        if check_attrs(cat.attributes):
+            dependents.append(f"  - Справочник: {cat.name}")
+
+    for doc in config.documents:
+        if check_attrs(doc.head_attributes) or check_attrs(doc.table_attributes):
+            dependents.append(f"  - Документ: {doc.name}")
+
+    for reg in config.registers:
+        all_attrs = list(reg.dimensions) + list(reg.resources) + list(reg.attributes)
+        if check_attrs(all_attrs):
+            dependents.append(f"  - Регистр: {reg.name}")
+
+    for const in config.constants:
+        if const.ref_type_id == obj_id:
+            dependents.append(f"  - Константа: {const.name}")
+
+    if not dependents:
+        return f"Нет объектов, зависящих от '{object_type}.{name}'."
+
+    lines = [f"Объекты, зависящие от '{object_type}.{name}':"]
+    lines.extend(dependents)
+    return "\n".join(lines)
 
 def get_global_module(start_line: int = 0, end_line: int = 0) -> str:
     """Get the global module source code."""

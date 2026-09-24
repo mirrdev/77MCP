@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1C 7.7 Metadata - Интерактивный Поиск</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh; padding: 2rem 1rem;
+  }
+  .container { max-width: 1500px; width: 95%; margin: 0 auto; }
+  header { text-align: center; color: #fff; margin-bottom: 2rem; }
+  header h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+  header p { opacity: 0.9; }
+  
+  .search-card {
+    background: #fff; border-radius: 16px; padding: 2rem;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2); margin-bottom: 2rem;
+  }
+  .search-box { display: flex; gap: 1rem; margin-bottom: 1rem; }
+  .search-input {
+    flex: 1; padding: 1rem 1.5rem; border: 2px solid #e0e0e0;
+    border-radius: 8px; font-size: 1rem; transition: border-color 0.2s;
+  }
+  .search-input:focus { outline: none; border-color: #667eea; }
+  .search-btn {
+    padding: 1rem 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff; border: none; border-radius: 8px; font-size: 1rem;
+    cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .search-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
+  
+  .filters { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .filter-btn {
+    padding: 0.6rem 1.2rem; background: #f0f0f0; border: none;
+    border-radius: 6px; cursor: pointer; transition: all 0.2s; font-size: 0.95rem;
+  }
+  .filter-btn:hover { background: #e0e0e0; }
+  .filter-btn.active { background: #667eea; color: #fff; }
+  
+  .results-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 1.25rem; margin-top: 1rem;
+  }
+  .result-card {
+    background: #fff; border-radius: 12px; padding: 1.5rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1); cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s; overflow: hidden;
+  }
+  .result-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,0.15); }
+  .result-type {
+    display: inline-block; padding: 0.25rem 0.75rem;
+    background: #667eea; color: #fff; border-radius: 4px;
+    font-size: 0.75rem; font-weight: 600; margin-bottom: 0.5rem;
+  }
+  .result-name {
+    font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem; color: #333;
+    word-break: break-word; overflow-wrap: anywhere; hyphens: auto; line-height: 1.35;
+  }
+  .result-synonym { color: #666; font-size: 0.9rem; margin-bottom: 0.5rem; word-break: break-word; }
+  .result-meta { font-size: 0.8rem; color: #999; }
+  
+  .modal-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7); display: none;
+    justify-content: center; align-items: center; z-index: 1000;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: #fff; border-radius: 16px; padding: 2rem;
+    max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto;
+    position: relative;
+  }
+  .modal-close {
+    position: absolute; top: 1rem; right: 1rem;
+    background: none; border: none; font-size: 1.5rem;
+    cursor: pointer; color: #666;
+  }
+  .modal-header { margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 2px solid #f0f0f0; }
+  .modal-title { font-size: 1.5rem; font-weight: 600; color: #333; }
+  .modal-subtitle { color: #666; margin-top: 0.25rem; }
+  .modal-body { line-height: 1.6; }
+  .modal-section { margin-bottom: 1.5rem; }
+  .modal-section h3 { font-size: 1.1rem; color: #667eea; margin-bottom: 0.5rem; }
+  .modal-section ul { list-style: none; padding-left: 0; }
+  .modal-section li { padding: 0.25rem 0; border-bottom: 1px solid #f0f0f0; }
+  .modal-section code {
+    background: #f5f5f5; padding: 0.2rem 0.4rem;
+    border-radius: 3px; font-size: 0.85rem;
+  }
+  .tab-buttons { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+  .tab-btn {
+    padding: 0.5rem 1rem; background: #f0f0f0; border: none;
+    border-radius: 6px; cursor: pointer; transition: all 0.2s;
+  }
+  .tab-btn.active { background: #667eea; color: #fff; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  
+  .status-bar {
+    background: #fff; border-radius: 8px; padding: 1rem;
+    margin-bottom: 1rem; display: flex; justify-content: space-between;
+    align-items: center; flex-wrap: wrap; gap: 1rem;
+  }
+  .status-item { display: flex; align-items: center; gap: 0.5rem; }
+  .status-label { color: #666; font-size: 0.9rem; }
+  .status-value { font-weight: 600; color: #333; }
+  .status-badge {
+    padding: 0.25rem 0.75rem; border-radius: 4px;
+    font-size: 0.8rem; font-weight: 600;
+  }
+  .status-badge.loaded { background: #d4edda; color: #155724; }
+  .status-badge.not-loaded { background: #f8d7da; color: #721c24; }
+  
+  .category-block {
+    background: #fff; border-radius: 12px; padding: 1.5rem;
+    margin-bottom: 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+  .category-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid #f0f0f0;
+  }
+  .category-title {
+    font-size: 1.2rem; font-weight: 600; color: #333;
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  .btn-more {
+    padding: 0.35rem 0.85rem; background: #667eea; color: #fff;
+    border: none; border-radius: 6px; font-size: 0.85rem; font-weight: 600;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .btn-more:hover { background: #764ba2; }
+  
+  .loading { text-align: center; padding: 2rem; color: #666; }
+  .empty-state { text-align: center; padding: 3rem; color: #999; }
+  
+  pre {
+    background: #f5f5f5; padding: 1rem; border-radius: 8px;
+    overflow-x: auto; font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>🔍 1C 7.7 Metadata Explorer</h1>
+    <p>Интерактивный поиск и просмотр метаданных конфигурации</p>
+  </header>
+  
+  <div class="status-bar" id="statusBar">
+    <div class="status-item">
+      <span class="status-label">Статус:</span>
+      <span class="status-badge not-loaded" id="statusBadge">Не загружено</span>
+    </div>
+    <div class="status-item" id="configInfo" style="display:none;">
+      <span class="status-label">Конфигурация:</span>
+      <span class="status-value" id="configName"></span>
+      <span class="status-value" id="configVersion" style="margin-left:0.5rem;"></span>
+    </div>
+    <div class="status-item">
+      <button class="filter-btn" onclick="openUploadPage()">📤 Загрузить файл</button>
+    </div>
+  </div>
+  
+  <div class="search-card">
+    <div class="search-box">
+      <input type="text" class="search-input" id="searchInput" 
+             placeholder="Поиск по имени, синониму или комментарию..." 
+             onkeypress="if(event.key==='Enter') search()">
+      <button class="search-btn" onclick="search()">Найти</button>
+    </div>
+    <div class="filters" id="typeFilters">
+      <button class="filter-btn active" data-type="">Все объекты</button>
+      <button class="filter-btn" data-type="Справочник">Справочники</button>
+      <button class="filter-btn" data-type="Документ">Документы</button>
+      <button class="filter-btn" data-type="Регистр">Регистры</button>
+      <button class="filter-btn" data-type="Перечисление">Перечисления</button>
+      <button class="filter-btn" data-type="Константа">Константы</button>
+      <button class="filter-btn" data-type="Отчёт">Отчёты</button>
+      <button class="filter-btn" data-type="Журнал">Журналы</button>
+    </div>
+  </div>
+  
+  <div id="resultsContainer">
+    <div class="empty-state">
+      <p>Загрузка объектов...</p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle"></div>
+      <div class="modal-subtitle" id="modalSubtitle"></div>
+    </div>
+    <div class="tab-buttons" id="tabButtons"></div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+const baseUrl = window.location.origin;
+let currentFilter = '';
+let currentObject = null;
+
+// Инициализация фильтров
+document.querySelectorAll('#typeFilters .filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#typeFilters .filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.type;
+    listObjects(currentFilter);
+  });
+});
+
+async function loadStatus() {
+  try {
+    const resp = await fetch('/api/status');
+    const data = await resp.json();
+    const badge = document.getElementById('statusBadge');
+    const configInfo = document.getElementById('configInfo');
+    
+    if (data.loaded) {
+      badge.textContent = 'Загружено';
+      badge.className = 'status-badge loaded';
+      document.getElementById('configName').textContent = data.name;
+      document.getElementById('configVersion').textContent = data.version;
+      configInfo.style.display = 'flex';
+    } else {
+      badge.textContent = 'Не загружено';
+      badge.className = 'status-badge not-loaded';
+      configInfo.style.display = 'none';
+    }
+  } catch (e) {
+    console.error('Error loading status:', e);
+  }
+}
+
+async function search() {
+  const query = document.getElementById('searchInput').value.trim();
+  if (!query) return;
+  
+  const container = document.getElementById('resultsContainer');
+  container.innerHTML = '<div class="loading">Поиск...</div>';
+  
+  try {
+    const resp = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+    const data = await resp.json();
+    
+    if (data.ok && data.results.length > 0) {
+      renderResults(data.results);
+    } else {
+      container.innerHTML = '<div class="empty-state"><p>Ничего не найдено</p></div>';
+    }
+  } catch (e) {
+    container.innerHTML = '<div class="empty-state"><p>Ошибка поиска: ' + e.message + '</p></div>';
+  }
+}
+
+async function listObjects(type = '') {
+  const container = document.getElementById('resultsContainer');
+  container.innerHTML = '<div class="loading">Загрузка объектов...</div>';
+  
+  try {
+    const resp = await fetch(`/api/objects${type ? '?type=' + encodeURIComponent(type) : ''}`);
+    const data = await resp.json();
+    
+    if (data.ok) {
+      if (!type) {
+        renderGroupedObjects(data.objects);
+      } else {
+        const results = [];
+        for (const [objType, names] of Object.entries(data.objects)) {
+          names.forEach(name => results.push({type: objType, name: name}));
+        }
+        renderResults(results);
+      }
+    } else {
+      container.innerHTML = '<div class="empty-state"><p>Ошибка загрузки: ' + data.error + '</p></div>';
+    }
+  } catch (e) {
+    container.innerHTML = '<div class="empty-state"><p>Ошибка: ' + e.message + '</p></div>';
+  }
+}
+
+const categoryLabels = {
+  'Справочник': '📚 Справочники',
+  'Документ': '📄 Документы',
+  'Регистр': '📊 Регистры',
+  'Перечисление': '🔢 Перечисления',
+  'Константа': '⚙️ Константы',
+  'Отчёт': '📈 Отчёты',
+  'Журнал': '📑 Журналы',
+  'ВидРасчета': '🧮 Виды расчётов',
+  'ПланСчетов': '💳 План счетов'
+};
+
+function selectTypeFilter(typeName) {
+  const btn = document.querySelector(`#typeFilters .filter-btn[data-type="${typeName}"]`);
+  if (btn) {
+    btn.click();
+  } else {
+    listObjects(typeName);
+  }
+}
+
+function renderGroupedObjects(objects) {
+  const container = document.getElementById('resultsContainer');
+  if (!objects || Object.keys(objects).length === 0) {
+    container.innerHTML = '<div class="empty-state"><p>Ничего не найдено</p></div>';
+    return;
+  }
+  
+  let html = '';
+  for (const [objType, names] of Object.entries(objects)) {
+    if (!names || names.length === 0) continue;
+    const title = categoryLabels[objType] || objType;
+    const count = names.length;
+    
+    html += `
+      <div class="category-block">
+        <div class="category-header">
+          <div class="category-title">${title} (${count})</div>
+          <button class="btn-more" onclick="selectTypeFilter('${objType}')">Показать все (${count}) →</button>
+        </div>
+        <div class="results-grid">
+    `;
+    
+    names.slice(0, 6).forEach(name => {
+      html += `
+        <div class="result-card" onclick="showObject('${objType}', '${name}')">
+          <span class="result-type">${objType}</span>
+          <div class="result-name">${escapeHtml(name)}</div>
+          <div class="result-meta">Нажмите для деталей</div>
+        </div>
+      `;
+    });
+    
+    html += `
+        </div>
+      </div>
+    `;
+  }
+  
+  container.innerHTML = html;
+}
+
+function renderResults(results) {
+  const container = document.getElementById('resultsContainer');
+  if (results.length === 0) {
+    container.innerHTML = '<div class="empty-state"><p>Ничего не найдено</p></div>';
+    return;
+  }
+  
+  let html = '<div class="results-grid">';
+  results.forEach(item => {
+    const typeLabel = item.type || item.object_type || 'Объект';
+    const name = item.name || item;
+    const synonym = item.synonym || '';
+    html += `
+      <div class="result-card" onclick="showObject('${typeLabel}', '${name}')">
+        <span class="result-type">${typeLabel}</span>
+        <div class="result-name">${escapeHtml(name)}</div>
+        ${synonym ? '<div class="result-synonym">' + escapeHtml(synonym) + '</div>' : ''}
+        <div class="result-meta">Нажмите для деталей</div>
+      </div>
+    `;
+  });
+  html += '</div>';
+  
+  container.innerHTML = html;
+}
+
+async function showObject(type, name) {
+  currentObject = {type, name};
+  const overlay = document.getElementById('modalOverlay');
+  const title = document.getElementById('modalTitle');
+  const subtitle = document.getElementById('modalSubtitle');
+  const body = document.getElementById('modalBody');
+  const tabs = document.getElementById('tabButtons');
+  
+  title.textContent = name;
+  subtitle.textContent = type;
+  tabs.innerHTML = '';
+  body.innerHTML = '<div class="loading">Загрузка...</div>';
+  overlay.classList.add('active');
+  
+  // Создаем вкладки
+  const tabConfig = [
+    {id: 'info', label: '📋 Информация', fn: loadObjectInfo},
+    {id: 'module', label: '💻 Модуль', fn: loadModule},
+    {id: 'form', label: '🖼️ Форма', fn: loadForm},
+    {id: 'deps', label: '🔗 Зависимости', fn: loadDependencies},
+    {id: 'dependents', label: '📍 Кто использует', fn: loadDependents},
+  ];
+  
+  tabConfig.forEach(tab => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn';
+    btn.textContent = tab.label;
+    btn.onclick = () => switchTab(tab.id);
+    btn.dataset.tab = tab.id;
+    btn.dataset.fn = tab.fn.name;
+    tabs.appendChild(btn);
+  });
+  
+  // Загружаем первую вкладку
+  switchTab('info');
+}
+
+async function switchTab(tabId) {
+  let targetBtn = null;
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    const isActive = btn.dataset.tab === tabId;
+    btn.classList.toggle('active', isActive);
+    if (isActive) targetBtn = btn;
+  });
+  
+  if (!targetBtn) return;
+  const fnName = targetBtn.dataset.fn;
+  
+  if (fnName === 'loadObjectInfo') {
+    await loadObjectInfo();
+  } else if (fnName === 'loadModule') {
+    await loadModule();
+  } else if (fnName === 'loadForm') {
+    await loadForm();
+  } else if (fnName === 'loadDependencies') {
+    await loadDependencies();
+  } else if (fnName === 'loadDependents') {
+    await loadDependents();
+  }
+}
+
+async function loadObjectInfo() {
+  if (!currentObject) return;
+  const body = document.getElementById('modalBody');
+  body.innerHTML = '<div class="loading">Загрузка информации...</div>';
+  
+  try {
+    const resp = await fetch(`/api/objects/${encodeURIComponent(currentObject.type)}/${encodeURIComponent(currentObject.name)}`);
+    const data = await resp.json();
+    
+    if (data.ok) {
+      body.innerHTML = `<pre>${escapeHtml(data.data)}</pre>`;
+    } else {
+      body.innerHTML = '<div class="empty-state"><p>Ошибка: ' + data.error + '</p></div>';
+    }
+  } catch (e) {
+    body.innerHTML = '<div class="empty-state"><p>Ошибка: ' + e.message + '</p></div>';
+  }
+}
+
+async function loadModule() {
+  if (!currentObject) return;
+  const body = document.getElementById('modalBody');
+  body.innerHTML = '<div class="loading">Загрузка модуля...</div>';
+  
+  try {
+    const resp = await fetch(`/api/objects/${encodeURIComponent(currentObject.type)}/${encodeURIComponent(currentObject.name)}/module`);
+    const data = await resp.json();
+    
+    if (data.ok) {
+      body.innerHTML = data.module ? `<pre><code>${escapeHtml(data.module)}</code></pre>` : '<div class="empty-state"><p>Модуль отсутствует</p></div>';
+    } else {
+      body.innerHTML = '<div class="empty-state"><p>Ошибка: ' + data.error + '</p></div>';
+    }
+  } catch (e) {
+    body.innerHTML = '<div class="empty-state"><p>Ошибка: ' + e.message + '</p></div>';
+  }
+}
+
+async function loadForm() {
+  if (!currentObject) return;
+  const body = document.getElementById('modalBody');
+  body.innerHTML = '<div class="loading">Загрузка формы...</div>';
+  
+  try {
+    const resp = await fetch(`/api/objects/${encodeURIComponent(currentObject.type)}/${encodeURIComponent(currentObject.name)}/form`);
+    const data = await resp.json();
+    
+    if (data.ok) {
+      body.innerHTML = data.form ? `<pre>${escapeHtml(data.form)}</pre>` : '<div class="empty-state"><p>Форма отсутствует</p></div>';
+    } else {
+      body.innerHTML = '<div class="empty-state"><p>Ошибка: ' + data.error + '</p></div>';
+    }
+  } catch (e) {
+    body.innerHTML = '<div class="empty-state"><p>Ошибка: ' + e.message + '</p></div>';
+  }
+}
+
+async function loadDependencies() {
+  if (!currentObject) return;
+  const body = document.getElementById('modalBody');
+  body.innerHTML = '<div class="loading">Загрузка зависимостей...</div>';
+  
+  try {
+    const resp = await fetch(`/api/objects/${encodeURIComponent(currentObject.type)}/${encodeURIComponent(currentObject.name)}/dependencies`);
+    const data = await resp.json();
+    
+    if (data.ok && data.dependencies.length > 0) {
+      body.innerHTML = `
+        <div class="modal-section">
+          <h3>Использует объекты (${data.count}):</h3>
+          <ul>${data.dependencies.map(d => '<li>' + escapeHtml(d) + '</li>').join('')}</ul>
+        </div>
+      `;
+    } else {
+      body.innerHTML = '<div class="empty-state"><p>Зависимости не найдены</p></div>';
+    }
+  } catch (e) {
+    body.innerHTML = '<div class="empty-state"><p>Ошибка: ' + e.message + '</p></div>';
+  }
+}
+
+async function loadDependents() {
+  if (!currentObject) return;
+  const body = document.getElementById('modalBody');
+  body.innerHTML = '<div class="loading">Загрузка...</div>';
+  
+  try {
+    const resp = await fetch(`/api/objects/${encodeURIComponent(currentObject.type)}/${encodeURIComponent(currentObject.name)}/dependents`);
+    const data = await resp.json();
+    
+    if (data.ok && data.dependents.length > 0) {
+      body.innerHTML = `
+        <div class="modal-section">
+          <h3>Используют этот объект (${data.count}):</h3>
+          <ul>${data.dependents.map(d => '<li>' + escapeHtml(d) + '</li>').join('')}</ul>
+        </div>
+      `;
+    } else {
+      body.innerHTML = '<div class="empty-state"><p>Зависимые объекты не найдены</p></div>';
+    }
+  } catch (e) {
+    body.innerHTML = '<div class="empty-state"><p>Ошибка: ' + e.message + '</p></div>';
+  }
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('active');
+  currentObject = null;
+}
+
+function openUploadPage() {
+  window.open('/', '_blank');
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Загрузка данных при старте
+loadStatus();
+listObjects('');
+setInterval(loadStatus, 30000); // Обновление каждые 30 сек
+</script>
+</body>
+</html>

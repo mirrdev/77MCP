@@ -176,6 +176,30 @@ def resolve_id(object_id: str) -> str:
 
 
 @mcp.tool()
+def export_to_json(output_path: str = "") -> str:
+    """Экспортировать метаданные конфигурации в JSON; файл — только в MCP_DATA_DIR."""
+    return tools.export_to_json(output_path)
+
+
+@mcp.tool()
+def export_object_to_json(object_type: str, name: str) -> str:
+    """Экспортировать один объект метаданных в JSON."""
+    return tools.export_object_to_json(object_type, name)
+
+
+@mcp.tool()
+def get_object_dependencies(object_type: str, name: str) -> str:
+    """Показать объекты, на которые ссылаются реквизиты данного объекта."""
+    return tools.get_object_dependencies(object_type, name)
+
+
+@mcp.tool()
+def find_dependent_objects(object_type: str, name: str) -> str:
+    """Показать объекты, реквизиты которых ссылаются на данный объект."""
+    return tools.find_dependent_objects(object_type, name)
+
+
+@mcp.tool()
 def get_database_info() -> dict:
     """Состояние подключения к реальной файловой базе 7.7 и путь источника данных.
 

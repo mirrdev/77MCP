@@ -12,7 +12,10 @@ MCP-сервер для анализа метаданных и чтения да
 
 - **Парсинг файлов 1Cv7.MD** — чтение метаданных напрямую из файлов конфигурации
 - **Web-интерфейс** — удобная загрузка файлов через браузер
+- **Explorer** — просмотр метаданных и зависимостей на `http://localhost:8099/explorer`
+- **REST API и CLI** — доступ к метаданным через `/api` и `mcp-1c77-cli`
 - **MCP over SSE и Streamable HTTP** — интеграция с MCP-клиентами
+- **MCP Stdio** — запуск через `python -m mcp_1c77 --stdio`
 - **Поддерживаемые объекты:**
   - Справочники (Catalogs)
   - Документы (Documents)
@@ -50,12 +53,21 @@ python -m mcp_1c77
 ```
 
 Сервер запустится на `http://localhost:8099` (по умолчанию доступен только локально).
+Для MCP в режиме Stdio используйте `python -m mcp_1c77 --stdio`.
 
 ### Web-интерфейс
 
 1. Откройте `http://localhost:8099` в браузере
 2. Перетащите файл `1Cv7.MD` в зону загрузки
 3. После загрузки вы увидите статистику по конфигурации
+
+Интерактивный браузер метаданных доступен на `http://localhost:8099/explorer`.
+REST API: `http://localhost:8099/api`. Например, `GET /api/objects?type=Документ`
+возвращает список документов, а `GET /api/export` — JSON конфигурации.
+CLI после установки пакета: `mcp-1c77-cli status` или
+`mcp-1c77-cli export --save --output config.json` (файл сохраняется локально).
+Explorer, REST API, CLI и инструменты зависимостей интегрированы из
+[форка sayfarin/77MCP](https://github.com/sayfarin/77MCP).
 
 ### Интеграция с Claude Code
 
@@ -86,6 +98,10 @@ claude mcp add --transport sse 1c77-metadata http://localhost:8099/sse
 | `search_field` | Найти все объекты, содержащие реквизит с данным именем |
 | `get_objects_batch` | Пакетное получение метаданных нескольких объектов за один вызов |
 | `resolve_id` | Определить тип и имя объекта по его внутреннему ID |
+| `export_to_json` | Экспорт структуры конфигурации в JSON; файл только в MCP_DATA_DIR |
+| `export_object_to_json` | Экспорт одного объекта в JSON |
+| `get_object_dependencies` | Прямые зависимости объекта по типам реквизитов |
+| `find_dependent_objects` | Объекты, ссылающиеся на данный объект |
 | `get_database_info` | Состояние OLE-подключения и источник данных |
 | `read_catalog` | Элементы и реквизиты справочника |
 | `read_documents` | Документы выбранного вида за период |
@@ -165,7 +181,10 @@ src/mcp_1c77/
 ├── __init__.py
 ├── __main__.py       # Точка входа для запуска сервера
 ├── server.py         # MCP-сервер (FastMCP)
-├── web.py            # Web-интерфейс + SSE-транспорт
+├── web.py            # Web-интерфейс, REST, SSE и Streamable HTTP
+├── api/              # Маршруты REST API
+├── client.py         # Python-клиент REST API
+├── cli.py            # Консольная утилита
 ├── tools.py          # Реализация MCP-инструментов
 ├── data_tools.py     # Публичные операции чтения данных
 ├── data_runtime.py   # Изолированный OLE worker с тайм-аутом
